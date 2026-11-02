@@ -1,0 +1,104 @@
+# =============================================================================
+# InfinityFree — htdocs/.htaccess
+# -----------------------------------------------------------------------------
+# Upload this file to the htdocs root, next to app/, bootstrap/, config/,
+# public/, storage/, vendor/ and the .env file.
+#
+# The hosting document root cannot be changed, so every request is routed
+# through public/ from here.
+# =============================================================================
+
+# No directory listings anywhere under htdocs.
+Options -Indexes -MultiViews
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # -------------------------------------------------------------------------
+    # 1. Deny dotfiles: .env, .env.production, .git, .htaccess, .well-known
+    #    (.well-known is re-allowed below so free SSL validation keeps working)
+    # -------------------------------------------------------------------------
+    RewriteCond %{REQUEST_URI} !^/\.well-known/
+    RewriteRule (^|/)\. - [F,L]
+
+    # -------------------------------------------------------------------------
+    # 2. Deny application internals. These live in htdocs but must never be
+    #    reachable over HTTP.
+    # -------------------------------------------------------------------------
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|tests|vendor)(/|$) - [F,L]
+
+    # -------------------------------------------------------------------------
+    # 3. Public storage. InfinityFree does not support symlinks, so
+    #    storage/app/public is mapped onto /storage/* instead of storage:link.
+    #    [END] stops any further rewriting (it is supported by the host).
+    # -------------------------------------------------------------------------
+    RewriteRule ^storage/(.+)$ storage/app/public/$1 [END]
+
+    # 4. Everything else inside storage/ (logs, framework cache, private
+    #    files) stays private.
+    RewriteRule ^storage(/.*)?$ - [F,L]
+
+    # -------------------------------------------------------------------------
+    # 5. Never expose loose PHP files or build tooling from the htdocs root
+    #    (artisan, add_hierarchy.php, composer.json, asset sources, ...).
+    # -------------------------------------------------------------------------
+    RewriteRule ^[^/]+\.(php|phtml|phar)$ - [F,L]
+    RewriteRule ^(composer\.(json|lock)|package(-lock)?\.json|vite\.config\.js|phpunit\.xml|README\.md|AGENTS\.md)$ - [F,L]
+
+    # -------------------------------------------------------------------------
+    # 6. Front controller. The site root and every other path are served from
+    #    public/ (Laravel's own public/.htaccess finishes the job for
+    #    non-existent files).
+    # -------------------------------------------------------------------------
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} !^/storage/
+    RewriteCond %{REQUEST_URI} !^/\.well-known/
+    RewriteRule ^$ public/index.php [L]
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# -----------------------------------------------------------------------------
+# Backstop for the files above, in case mod_rewrite is ever unavailable.
+# Apache 2.4 syntax first, 2.2 fallback second.
+# -----------------------------------------------------------------------------
+<FilesMatch "^(\.env.*|\.git.*|artisan|composer\.(json|lock)|package(-lock)?\.json|phpunit\.xml|vite\.config\.js|.*\.(sql|log|lock|md|dist|example))$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# -----------------------------------------------------------------------------
+# HTTPS. Enable this block ONLY after free SSL is issued and active for the
+# domain, otherwise every request redirects to an unreachable https URL.
+# -----------------------------------------------------------------------------
+# <IfModule mod_rewrite.c>
+#     RewriteEngine On
+#     RewriteCond %{HTTPS} !=on
+#     RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+#     RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+# </IfModule>
+
+# -----------------------------------------------------------------------------
+# Cache static assets produced by Vite. Hashed filenames are immutable.
+# -----------------------------------------------------------------------------
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/webp "access plus 1 month"
+    ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
